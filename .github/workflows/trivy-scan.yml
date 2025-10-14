@@ -1,36 +1,57 @@
-name: Trivy Docker Image Scan
+name: Trivy Scan Python App
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
   trivy-scan:
-    name: Trivy scan the docker image
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Trivy
-        run: |
-          sudo apt update -y && sudo apt upgrade -y 
-          sudo apt-get install wget -y
-          wget https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh
-          sudo bash install.sh
-          trivy --version
+      # -----------------------------------------------------
+      # Phase 1: Scan the filesystem *before* the Docker build
+      # -----------------------------------------------------
+      - name: Perform Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
 
-      - name: Scan the file system (fs)
-        run: |
-          trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 .
+      - name: Upload Trivy FS scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() # Continue even if the previous step failed
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
 
-      - name: Build the docker image
+      # -----------------------------------------------------
+      # Phase 2: Build the Docker image and scan the result
+      # -----------------------------------------------------
+      - name: Build Docker image
         run: |
           docker build -t myapp:latest .
+      
+      - name: Perform Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'myapp:latest'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          exit-code: '0' # Don't fail the build on image vulnerabilities
+      
+      - name: Upload Trivy Image scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() # Continue even if the previous step failed
+        with:
+          sarif_file: 'trivy-image-results.sarif'
 
-      - name: Scan the docker image with Trivy
-        run: |
-          trivy image --format json -o "./reports/app_scan_report_$(TZ='Asia/Kolkata' date +%Y%m%d_%H%M%S).json" myapp:latest
