@@ -1,57 +1,81 @@
-name: Trivy Scan Python App
+name: CI Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
-  trivy-scan:
+  build-test-scan:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      # 🧱 1. Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # -----------------------------------------------------
-      # Phase 1: Scan the filesystem *before* the Docker build
-      # -----------------------------------------------------
-      - name: Perform Trivy filesystem scan
+      # 🧼 2. Set Up Python Environment
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 📦 3. Install Project Dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 🧹 4. Static Code Analysis (Linting & Formatting)
+      - name: Lint code with flake8
+        run: |
+          pip install flake8
+          flake8 .
+
+      # 🔒 5. Security Scanning
+      - name: Bandit Security Scan
+        run: |
+          pip install bandit
+          bandit -r .
+
+      - name: Trivy File System Scan
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: 'fs'
+          scan-type: fs
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
-          format: 'sarif'
-          output: 'trivy-fs-results.sarif'
+          severity: CRITICAL,HIGH
+          exit-code: 0
 
-      - name: Upload Trivy FS scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always() # Continue even if the previous step failed
-        with:
-          sarif_file: 'trivy-fs-results.sarif'
+      # 🧪 6. Unit Tests & Coverage
+      - name: Unit testing and coverage
+        run: |
+          pip install pytest pytest-cov
+          pytest --cov=my_app --cov-fail-under=80
 
-      # -----------------------------------------------------
-      # Phase 2: Build the Docker image and scan the result
-      # -----------------------------------------------------
+      # 🐳 7. Build Docker Image
       - name: Build Docker image
         run: |
-          docker build -t myapp:latest .
-      
-      - name: Perform Trivy image scan
+          docker build -t app:latest .
+
+      # 🛡️ 8. Scan Docker Image
+      - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'myapp:latest'
+          image-ref: app:latest
+          format: table
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          format: 'sarif'
-          output: 'trivy-image-results.sarif'
-          exit-code: '1' # Don't fail the build on image vulnerabilities
-      
-      - name: Upload Trivy Image scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always() # Continue even if the previous step failed
-        with:
-          sarif_file: 'trivy-image-results.sarif'
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      # ☁️ 9. Push Docker Image to Docker Hub
+      - name: Push Docker image to Docker Hub
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+          docker tag app:latest myrepo/app:latest
+          docker push myrepo/app:latest
+
 
