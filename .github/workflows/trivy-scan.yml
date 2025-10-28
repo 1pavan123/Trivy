@@ -70,11 +70,14 @@ jobs:
           exit-code: 1
 
       # ☁️ 9. Push Docker Image to Docker Hub
-      - name: Push Docker image to Docker Hub
+      - name: Push Docker image to Docker Hub (Test)
         if: github.ref == 'refs/heads/main'
         run: |
-          echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
-          docker tag app:latest myrepo/app:latest
-          docker push myrepo/app:latest
+          echo "Logging into Docker..."
+          echo "Kasinni@321" | docker login -u "123pavan123" --password-stdin
+          docker tag app:latest 123pavan123/trivy:latest
+          docker push 123pavan123/trivy:latest
+
+
 
 
